@@ -34,7 +34,8 @@ async def subscribe(event):
 
         for ad in ads:
             ad_id = ad.get('id')
-            if ad_id and not db.has_seen_ad(ad_id):
+            # Check if the user has already seen this ad
+            if ad_id and not db.has_user_seen_ad(user_id, ad_id):
                 ad_title = ad.get('title')
                 ad_url = ad.get('url')
                 ad_image = ad.get('image_url')
@@ -53,10 +54,10 @@ async def subscribe(event):
                         await bot.send_file(user_id, ad_image, caption=message)
                     else:
                         await bot.send_message(user_id, message)
+                    # Mark the ad as seen for this specific user
+                    db.add_seen_ad_for_user(user_id, ad_id)
                 except Exception as e:
                     print(f"Failed to send message to {user_id}: {e}")
-                
-                db.add_seen_ad(ad_id)
 
     except IndexError:
         await event.reply("Please provide a keyword to subscribe. Usage: /subscribe <keyword>")
@@ -90,33 +91,38 @@ async def check_for_new_ads():
         all_keywords = db.get_all_subscriptions()
         for keyword in all_keywords:
             ads = fetch_ads(keyword)
+            users_to_notify = db.get_users_for_keyword(keyword)
+
             for ad in ads:
                 ad_id = ad.get('id')
-                if ad_id and not db.has_seen_ad(ad_id):
-                    ad_title = ad.get('title')
-                    ad_url = ad.get('url')
-                    ad_image = ad.get('image_url')
-                    ad_price = ad.get('price')
-                    ad_location = ad.get('location')
-                    ad_timestamp = ad.get('timeStamp')
+                if not ad_id:
+                    continue
 
-                    message = (f"**New Ad Found for '{keyword}'**\n\n"
-                               f"**Title:** {ad_title}\n"
-                               f"**Price:** {ad_price}\n"
-                               f"**Location:** {ad_location}\n"
-                               f"**Posted:** {ad_timestamp}\n\n"
-                               f"**Link:** {ad_url}")
-                    
-                    users_to_notify = db.get_users_for_keyword(keyword)
-                    for user_id in users_to_notify:
+                ad_title = ad.get('title')
+                ad_url = ad.get('url')
+                ad_image = ad.get('image_url')
+                ad_price = ad.get('price')
+                ad_location = ad.get('location')
+                ad_timestamp = ad.get('timeStamp')
+
+                message = (f"**New Ad Found for '{keyword}'**\n\n"
+                           f"**Title:** {ad_title}\n"
+                           f"**Price:** {ad_price}\n"
+                           f"**Location:** {ad_location}\n"
+                           f"**Posted:** {ad_timestamp}\n\n"
+                           f"**Link:** {ad_url}")
+
+                for user_id in users_to_notify:
+                    if not db.has_user_seen_ad(user_id, ad_id):
                         try:
                             if ad_image:
                                 await bot.send_file(user_id, ad_image, caption=message)
                             else:
                                 await bot.send_message(user_id, message)
+                            
+                            db.add_seen_ad_for_user(user_id, ad_id)
                         except Exception as e:
                             print(f"Failed to send message to {user_id}: {e}")
-                    db.add_seen_ad(ad_id)
         
         # Wait for 5 minutes before the next check
         await asyncio.sleep(300)
